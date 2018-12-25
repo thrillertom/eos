@@ -530,23 +530,23 @@ class kinesis_plugin_impl {
             auto &chain = my->chain_plug->chain();
             my->chain_id.emplace(chain.get_chain_id());
 
-            my->accepted_block_connection.emplace( chain.accepted_block.connect( [&]( const chain::block_state_ptr& bs ) {
-                my->accepted_block(bs);
-            }));
+            // my->accepted_block_connection.emplace( chain.accepted_block.connect( [&]( const chain::block_state_ptr& bs ) {
+            //     my->accepted_block(bs);
+            // }));
 
             my->irreversible_block_connection.emplace(
                 chain.irreversible_block.connect([&](const chain::block_state_ptr &bs) {
                     my->applied_irreversible_block(bs);
                 }));
 
-            my->accepted_transaction_connection.emplace(
-                chain.accepted_transaction.connect([&](const chain::transaction_metadata_ptr &t) {
-                    my->accepted_transaction(t);
-                }));
-            my->applied_transaction_connection.emplace(
-                chain.applied_transaction.connect([&](const chain::transaction_trace_ptr &t) {
-                    my->applied_transaction(t);
-                }));
+            // my->accepted_transaction_connection.emplace(
+            //     chain.accepted_transaction.connect([&](const chain::transaction_metadata_ptr &t) {
+            //         my->accepted_transaction(t);
+            //     }));
+            // my->applied_transaction_connection.emplace(
+            //     chain.applied_transaction.connect([&](const chain::transaction_trace_ptr &t) {
+            //         my->applied_transaction(t);
+            //     }));
             my->init();
         }
 
@@ -566,5 +566,3 @@ class kinesis_plugin_impl {
         ilog("Kinesis_plugin shutdown successfully.");
     }
 } // namespace eosio
-
-

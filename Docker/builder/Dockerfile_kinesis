@@ -1,14 +1,19 @@
 FROM eosio/builder as builder
 ARG branch=master
 ARG symbol=SYS
+ARG j=4
 
 RUN apt-get update && DEBIAN_FRONTENT=noninteractive apt-get -y install libcurl4-openssl-dev libsoci-dev
 
-RUN git clone -b $branch --depth=1 https://github.com/aws/aws-sdk-cpp.git
+RUN git clone -b $branch --depth=1 https://github.com/aws/aws-sdk-cpp.git && \
+    git clone -b $branch --depth=1 https://github.com/lz4/lz4.git
 
 RUN cd aws-sdk-cpp && \
     mkdir build &&  cd build && \
     cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_ONLY=kinesis -DCMAKE_INSTALL_PREFIX=/usr/local -DBUILD_SHARED_LIBS=ON && \
-    make && \
-    make install
+    make -j$j && \
+    make -j$j install
 
+RUN cd lz4 && \
+    make -j$j && \
+    make -j$j install

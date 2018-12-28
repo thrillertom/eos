@@ -68,10 +68,12 @@ class kinesis_producer {
         pk << "pk-" << (m_counter++ % 100);
         putRecordsRequestEntry.SetPartitionKey(pk.str());
 
+        ilog("element length: ${len}", ("len", element.length()));
         Aws::StringStream data;
         data << element;
         Aws::Utils::ByteBuffer bytes((unsigned char *)data.str().c_str(), data.str().length());
         putRecordsRequestEntry.SetData(bytes);
+        ilog("bytes size: ${size}", ("size", (sizeof(bytes))));
         putRecordsRequestEntryList.push_back(std::move(putRecordsRequestEntry));
       }
       putRecordsRequest.SetRecords(putRecordsRequestEntryList);

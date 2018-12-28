@@ -400,7 +400,11 @@ namespace eosio {
     if (compressed_data_size == 0)
       elog("A result of 0 means compression worked, but was stopped because the destination buffer couldn't hold all the information.");
 
+    ilog("raw data size: ${size}", ("size", data.length()));
     string str(compressed_data, compressed_data_size);
+    ilog("max_dst_size: ${size}", ("size", max_dst_size));
+    ilog("compressed_data_size: ${size}", ("size", compressed_data_size));
+    ilog("result_string_size: ${size}", ("size", str.length()));
     delete[] compressed_data;
     compressed_data = 0;
 

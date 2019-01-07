@@ -71,14 +71,16 @@ class kinesis_producer {
         ilog("element length: ${len}", ("len", element.length()));
         Aws::StringStream data;
         data << element;
-        Aws::Utils::ByteBuffer bytes((unsigned char *)data.str().c_str(), data.str().length());
+        ilog("data stream: ${len}", ("len", data.str().length()));
+        auto uc_array = (unsigned char *)data.str().c_str();
+        Aws::Utils::ByteBuffer bytes(uc_array, data.str().length());
         putRecordsRequestEntry.SetData(bytes);
-        ilog("bytes size: ${size}", ("size", (sizeof(bytes))));
+        ilog("bytes length: ${len}", ("len", bytes.GetLength()));
         putRecordsRequestEntryList.push_back(std::move(putRecordsRequestEntry));
       }
       putRecordsRequest.SetRecords(putRecordsRequestEntryList);
       Aws::Kinesis::Model::PutRecordsOutcome putRecordsResult = client.PutRecords(putRecordsRequest);
-    
+
       while (putRecordsResult.GetResult().GetFailedRecordCount() > 0) {
         wlog("Some records failed, retrying " + std::to_string(putRecordsResult.GetResult().GetFailedRecordCount()));
         Aws::Vector<Aws::Kinesis::Model::PutRecordsRequestEntry> failedRecordsList;
@@ -112,7 +114,7 @@ class kinesis_producer {
     Aws::ShutdownAPI(m_options);
     ilog("Kinesis shutdown gracefully.");
   }
-  
+
  private:
   const int kCommitSize;
   const int kThreadSize;

@@ -61,11 +61,6 @@ namespace eosio {
     fc::optional<boost::signals2::scoped_connection> accepted_transaction_connection;
     fc::optional<boost::signals2::scoped_connection> applied_transaction_connection;
     chain_plugin *chain_plug;
-    struct trasaction_info_st {
-      uint64_t block_number;
-      fc::time_point block_time;
-      chain::transaction_trace_ptr trace;
-    };
 
     void consume_blocks();
 
@@ -81,9 +76,9 @@ namespace eosio {
 
     void _process_accepted_transaction(const chain::transaction_metadata_ptr &);
 
-    void process_applied_transaction(const trasaction_info_st &);
+    void process_applied_transaction(const chain::transaction_trace_ptr &);
 
-    void _process_applied_transaction(const trasaction_info_st &);
+    void _process_applied_transaction(const chain::transaction_trace_ptr &);
 
     void process_accepted_block(const chain::block_state_ptr &);
 
@@ -93,6 +88,8 @@ namespace eosio {
 
     void _process_irreversible_block(const chain::block_state_ptr &);
 
+    void add_action_trace(const chain::action_trace &);
+
     void init(int thread_number = 32);
 
     uint32_t start_block_num = 0;
@@ -100,7 +97,7 @@ namespace eosio {
 
     size_t queue_size = 10000;
     std::deque<chain::transaction_metadata_ptr> transaction_metadata_queue;
-    std::deque<trasaction_info_st> transaction_trace_queue;
+    std::deque<chain::transaction_trace_ptr> transaction_trace_queue;
     std::deque<chain::block_state_ptr> block_state_queue;
     std::deque<chain::block_state_ptr> irreversible_block_state_queue;
     boost::mutex mtx;
@@ -158,15 +155,7 @@ namespace eosio {
 
   void kinesis_plugin_impl::applied_transaction(const chain::transaction_trace_ptr &t) {
     try {
-      auto &chain = chain_plug->chain();
-      trasaction_info_st transactioninfo = trasaction_info_st{
-                                                              .block_number = chain.pending_block_state()->block_num,
-                                                              .block_time = chain.pending_block_time(),
-                                                              .trace = chain::transaction_trace_ptr(t)
-      };
-      trasaction_info_st &info_t = transactioninfo;
-
-      queue(mtx, condition, transaction_trace_queue, info_t);
+      queue(mtx, condition, transaction_trace_queue, t);
     } catch (fc::exception &e) {
       elog("FC Exception while applied_transaction ${e}", ("e", e.to_string()));
     } catch (std::exception &e) {
@@ -202,7 +191,7 @@ namespace eosio {
 
   void kinesis_plugin_impl::consume_blocks() {
     std::deque<chain::transaction_metadata_ptr> transaction_metadata_process_queue;
-    std::deque<trasaction_info_st> transaction_trace_process_queue;
+    std::deque<chain::transaction_trace_ptr> transaction_trace_process_queue;
     std::deque<chain::block_state_ptr> block_state_process_queue;
     std::deque<chain::block_state_ptr> irreversible_block_state_process_queue;
 
@@ -308,7 +297,7 @@ namespace eosio {
     }
   }
 
-  void kinesis_plugin_impl::process_applied_transaction(const trasaction_info_st &t) {
+  void kinesis_plugin_impl::process_applied_transaction(const chain::transaction_trace_ptr &t) {
     try {
       if (start_block_reached) {
         _process_applied_transaction(t);
@@ -363,17 +352,6 @@ namespace eosio {
     //producer->trx_kinesis_sendmsg(ACCEPTED_TRANSCTION, (unsigned char*)trx_json.c_str(), trx_json.length());
   }
 
-  void kinesis_plugin_impl::_process_applied_transaction(const trasaction_info_st &t) {
-    return; // Do nothing on applied transaction.
-    uint64_t time = (t.block_time.time_since_epoch().count()/1000);
-    string transaction_metadata_json =
-      "{\"block_number\":" + std::to_string(t.block_number) + ",\"block_time\":" + std::to_string(time) +
-      ",\"trace\":" + fc::json::to_string(t.trace).c_str() + "}";
-    transaction_metadata_json =
-      "{\"data\":" + transaction_metadata_json + "}";
-    producer->kinesis_sendmsg(transaction_metadata_json);
-  }
-
   auto make_resolver(controller& db, const fc::microseconds& max_serialization_time) {
     return [&db, max_serialization_time](const account_name &name) -> optional<abi_serializer> {
       const auto &d = db.db();
@@ -386,6 +364,29 @@ namespace eosio {
       }
       return optional<abi_serializer>();
     };
+  }
+
+  void kinesis_plugin_impl::add_action_trace(const chain::action_trace& atrace) {
+    const chain::base_action_trace& base = atrace; // without inline action traces
+
+    fc::variant pretty_output;
+    abi_serializer::to_variant(base,
+                               pretty_output,
+                               make_resolver(chain_plug->chain(), abi_serializer_max_time),
+                               abi_serializer_max_time);
+    string json = fc::json::to_string(fc::mutable_variant_object(pretty_output.get_object()));
+    ilog("action trace: ${action}", ("action", json));
+    producer->kinesis_sendmsg(json);
+
+    for( const auto& iline_atrace : atrace.inline_traces ) {
+      add_action_trace(iline_atrace);
+    }
+  }
+
+  void kinesis_plugin_impl::_process_applied_transaction(const chain::transaction_trace_ptr &t) {
+    for (const auto& atrace : t->action_traces) {
+      add_action_trace(atrace);
+    }
   }
 
   string compress_block(string const &data) {
@@ -560,19 +561,19 @@ namespace eosio {
       //     my->accepted_block(bs);
       // }));
 
-      my->irreversible_block_connection.emplace(
-                                                chain.irreversible_block.connect([&](const chain::block_state_ptr &bs) {
-                                                                                   my->applied_irreversible_block(bs);
-                                                                                 }));
+      // my->irreversible_block_connection.emplace(
+      //                                           chain.irreversible_block.connect([&](const chain::block_state_ptr &bs) {
+      //                                                                              my->applied_irreversible_block(bs);
+      //                                                                            }));
 
       // my->accepted_transaction_connection.emplace(
       //     chain.accepted_transaction.connect([&](const chain::transaction_metadata_ptr &t) {
       //         my->accepted_transaction(t);
       //     }));
-      // my->applied_transaction_connection.emplace(
-      //     chain.applied_transaction.connect([&](const chain::transaction_trace_ptr &t) {
-      //         my->applied_transaction(t);
-      //     }));
+      my->applied_transaction_connection.emplace(
+          chain.applied_transaction.connect([&](const chain::transaction_trace_ptr &t) {
+              my->applied_transaction(t);
+          }));
       my->init();
     }
 

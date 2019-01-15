@@ -1,4 +1,4 @@
-FROM eosbuilder:kinesis as builder
+FROM thrillertom/eosbuilder:kinesis as builder
 ARG branch=add-kinesis-plugin
 ARG symbol=SYS
 

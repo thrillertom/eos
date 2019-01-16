@@ -88,7 +88,7 @@ namespace eosio {
 
     void _process_irreversible_block(const chain::block_state_ptr &);
 
-    void add_action_trace(const chain::action_trace &);
+    void add_action_trace(const chain::action_trace &, const chain::transaction_trace_ptr &);
 
     void init(int thread_number = 32);
 
@@ -366,7 +366,7 @@ namespace eosio {
     };
   }
 
-  void kinesis_plugin_impl::add_action_trace(const chain::action_trace& atrace) {
+  void kinesis_plugin_impl::add_action_trace(const chain::action_trace& atrace, const chain::transaction_trace_ptr& t) {
     const chain::base_action_trace& base = atrace; // without inline action traces
 
     fc::variant pretty_output;
@@ -374,18 +374,25 @@ namespace eosio {
                                pretty_output,
                                make_resolver(chain_plug->chain(), abi_serializer_max_time),
                                abi_serializer_max_time);
-    string json = fc::json::to_string(fc::mutable_variant_object(pretty_output.get_object()));
-    ilog("action trace: ${action}", ("action", json));
+    string json;
+    if( t->receipt.valid() ) {
+      json = fc::json::to_string(fc::mutable_variant_object(pretty_output.get_object())
+                                        ("trx_status", std::string( t->receipt->status )));
+    } else {
+      json = fc::json::to_string(fc::mutable_variant_object(pretty_output.get_object()));
+    }
+    json = fc::prune_invalid_utf8( json );
+    // ilog("action trace: ${action}", ("action", json));
     producer->kinesis_sendmsg(json);
 
     for( const auto& iline_atrace : atrace.inline_traces ) {
-      add_action_trace(iline_atrace);
+      add_action_trace(iline_atrace, t);
     }
   }
 
   void kinesis_plugin_impl::_process_applied_transaction(const chain::transaction_trace_ptr &t) {
     for (const auto& atrace : t->action_traces) {
-      add_action_trace(atrace);
+      add_action_trace(atrace, t);
     }
   }
 

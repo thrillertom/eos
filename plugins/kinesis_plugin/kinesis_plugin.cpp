@@ -26,8 +26,6 @@
 #include <queue>
 #include <string>
 
-#include <lz4frame.h>
-
 namespace fc { class variant; }
 
 namespace eosio {
@@ -41,11 +39,6 @@ namespace eosio {
   using chain::signed_block;
   using chain::transaction_id_type;
   using chain::packed_transaction;
-
-  enum TransactionType {
-                        APPLIED_TRANSACTION = 1,
-                        ACCEPTED_TRANSACTION = 2
-  };
 
   static appbase::abstract_plugin& _kinesis_plugin = app().register_plugin<kinesis_plugin>();
   using kinesis_producer_ptr = std::shared_ptr<class kinesis_producer>;
@@ -345,13 +338,6 @@ namespace eosio {
     }
   }
 
-  void kinesis_plugin_impl::_process_accepted_transaction(const chain::transaction_metadata_ptr &t) {
-    // Note: accepted transaction do nothing.
-    //const auto& trx = t->trx;
-    //string trx_json = fc::json::to_string( trx );
-    //producer->trx_kinesis_sendmsg(ACCEPTED_TRANSCTION, (unsigned char*)trx_json.c_str(), trx_json.length());
-  }
-
   auto make_resolver(controller& db, const fc::microseconds& max_serialization_time) {
     return [&db, max_serialization_time](const account_name &name) -> optional<abi_serializer> {
       const auto &d = db.db();
@@ -364,6 +350,13 @@ namespace eosio {
       }
       return optional<abi_serializer>();
     };
+  }
+
+  void kinesis_plugin_impl::_process_accepted_transaction(const chain::transaction_metadata_ptr &t) {
+    // Note: accepted transaction do nothing.
+    //const auto& trx = t->trx;
+    //string trx_json = fc::json::to_string( trx );
+    //producer->trx_kinesis_sendmsg(ACCEPTED_TRANSCTION, (unsigned char*)trx_json.c_str(), trx_json.length());
   }
 
   void kinesis_plugin_impl::add_action_trace(const chain::action_trace& atrace, const chain::transaction_trace_ptr& t) {
@@ -382,7 +375,7 @@ namespace eosio {
       json = fc::json::to_string(fc::mutable_variant_object(pretty_output.get_object()));
     }
     json = fc::prune_invalid_utf8( json );
-    // ilog("action trace: ${action}", ("action", json));
+    ilog("pushing action trace: " + json);
     producer->kinesis_sendmsg(json);
 
     for( const auto& iline_atrace : atrace.inline_traces ) {
@@ -396,30 +389,8 @@ namespace eosio {
     }
   }
 
-  string compress_block(string const &data) {
-    const char* raw_data = data.c_str();
-    const size_t raw_data_size = data.length();
-    const size_t max_dst_size = LZ4F_compressFrameBound(raw_data_size, NULL);
-    char* compressed_data = new char[max_dst_size];
-    const size_t compressed_data_size = LZ4F_compressFrame(compressed_data, max_dst_size, raw_data, raw_data_size, NULL);
-
-    if (compressed_data_size < 0)
-      elog("A negative result from LZ4_compress_default indicates a failure trying to compress the data. failed with code: ${code}.", ("code", compressed_data_size));
-    if (compressed_data_size == 0)
-      elog("A result of 0 means compression worked, but was stopped because the destination buffer couldn't hold all the information.");
-
-    ilog("raw data size: ${size}", ("size", data.length()));
-    string str(compressed_data, compressed_data_size);
-    ilog("max_dst_size: ${size}", ("size", max_dst_size));
-    ilog("compressed_data_size: ${size}", ("size", compressed_data_size));
-    ilog("result_string_size: ${size}", ("size", str.length()));
-    delete[] compressed_data;
-    compressed_data = 0;
-
-    return str;
-  }
-
   void kinesis_plugin_impl::_process_accepted_block( const chain::block_state_ptr& bs ) {
+    return;
     //dlog(fc::json::to_string(bs));
     //string accepted_block_json = "{"
     //    "\"block_number\": ""
@@ -445,6 +416,7 @@ namespace eosio {
   }
 
   void kinesis_plugin_impl::_process_irreversible_block(const chain::block_state_ptr& bs) {
+    return;
     //dlog(fc::json::to_string(bs));
     //const auto block_num = bs->block_num();
     //const auto block_id_str = bs->id().str();
@@ -467,8 +439,7 @@ namespace eosio {
                                                           ("ref_block_prefix", ref_block_prefix)
                                                           ("finalized", true));
     //string irreversiable_block_json = "{\"block_finalized\": true, \"data\": " + fc::json::to_string(bs) + "}";
-    string compressed_block = compress_block(irreversiable_block_json);
-    producer->kinesis_sendmsg(compressed_block);
+    producer->kinesis_sendmsg(irreversiable_block_json);
 
     if (block->block_num() % 1000 == 0) {
       ilog("Final block " + std::to_string(block->block_num()));
@@ -564,28 +535,25 @@ namespace eosio {
       auto &chain = my->chain_plug->chain();
       my->chain_id.emplace(chain.get_chain_id());
 
-      // my->accepted_block_connection.emplace( chain.accepted_block.connect( [&]( const chain::block_state_ptr& bs ) {
-      //     my->accepted_block(bs);
-      // }));
+      // my->accepted_block_connection.emplace(chain.accepted_block.connect( [&]( const chain::block_state_ptr& bs ) {
+      //                                                                        my->accepted_block(bs);
+      //                                                                      }));
 
-      // my->irreversible_block_connection.emplace(
-      //                                           chain.irreversible_block.connect([&](const chain::block_state_ptr &bs) {
+      // my->irreversible_block_connection.emplace(chain.irreversible_block.connect([&](const chain::block_state_ptr &bs) {
       //                                                                              my->applied_irreversible_block(bs);
       //                                                                            }));
 
-      // my->accepted_transaction_connection.emplace(
-      //     chain.accepted_transaction.connect([&](const chain::transaction_metadata_ptr &t) {
-      //         my->accepted_transaction(t);
-      //     }));
-      my->applied_transaction_connection.emplace(
-          chain.applied_transaction.connect([&](const chain::transaction_trace_ptr &t) {
-              my->applied_transaction(t);
-          }));
+      // my->accepted_transaction_connection.emplace(chain.accepted_transaction.connect([&](const chain::transaction_metadata_ptr &t) {
+      //                                                                                  my->accepted_transaction(t);
+      //                                                                                }));
+      my->applied_transaction_connection.emplace(chain.applied_transaction.connect([&](const chain::transaction_trace_ptr &t) {
+                                                                                     my->applied_transaction(t);
+                                                                                   }));
       my->init();
     }
 
     FC_LOG_AND_RETHROW()
-      }
+  }
 
   void kinesis_plugin::plugin_startup() {
   }
